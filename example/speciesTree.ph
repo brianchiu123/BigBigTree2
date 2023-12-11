@@ -1,0 +1,1 @@
+((((((Dmel,(Dsim,Dsec)),((Dyak,Dsan),Dere)),Dana),(Dpse,Dper)),Dwil),((Dvir,Dmoj),Dgri));

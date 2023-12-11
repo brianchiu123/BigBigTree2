@@ -1,0 +1,24 @@
+sudo apt install curl
+sudo apt-get update
+sudo apt-get install default-jre
+sudo apt-get install default-jdk
+java -version
+sudo apt install git
+sudo apt install vim
+
+#Nextflow and BigBigTree
+curl -s https://get.nextflow.io | bash
+git clone https://github.com/jmchanglab/bigbigtree.git
+chmod -R 777 bigbigtree/
+
+#Docker install and environment
+sudo apt-get install docker.io
+sudo service docker start
+sudo docker version
+sudo docker pull tsaihanlung/mybiocontainer-python-bioperl
+
+#Docker operate
+sudo docker image ls
+sudo docker system df
+
+sudo nextflow run main.nf -with-docker 1a265f5fe961

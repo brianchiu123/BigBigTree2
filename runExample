@@ -1,0 +1,8 @@
+#!/bin/bash
+python bigbigtree.py --tree example/speciesTree.ph --pro example/Or_aa.fasta --nn example/Or_nn_v2.fasta -c CRG.config -r res_dic
+
+
+sudo python bigbigtree.py --tree example/test_species.ph --pro example/aa1.fasta --nn example/nn1.fasta -c CRG.config -r web_example
+
+
+nextflow run bigbigtree.nf --aa 'example/Or_aa.fasta' --nn 'example/Or_nn_v2.fasta' -resume

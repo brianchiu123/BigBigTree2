@@ -1,0 +1,40 @@
+#!/bin/bash
+#################################################################
+# INPUT:
+#	tree
+#	species_tree [optional]
+# OUTPUT: 
+#	tree_SIS.ph
+##################################################################
+
+TREEBEST_CMD="../../bin/treebest sdi"
+PLOT_CMD="../../scripts/plot_SISvsNumLeaf.R"
+
+INPUT_TREE=$1
+[[ $# == 2 ]] && SPECIES_TREE=$2
+
+SIS_COUNT=${INPUT_TREE/.ph/}_SIS.txt
+SIS_CSV=${INPUT_TREE/.ph/}_SIS.csv
+SIS_JPEG=${INPUT_TREE/.ph/}_SIS.jpg
+
+sed "s/\[&&NHX.*\]//g" $INPUT_TREE > tmp.ph
+if [[ $# == 2 ]]
+then
+    $TREEBEST_CMD -s $SPECIES_TREE tmp.ph > $INPUT_TREE
+else
+    $TREEBEST_CMD tmp.ph > $INPUT_TREE
+fi
+
+echo " count range"> $SIS_COUNT
+grep SIS $INPUT_TREE |awk -F"SIS=" '{print $2}'|awk -F: '{printf "%d\n",$1/10}'|sort -n|uniq -c >> $SIS_COUNT
+
+echo "num_leaf,SIS">$SIS_CSV
+perl -lne 'print "$2,$1" if /SIS=(\d+).*XN=(\d+)/' $INPUT_TREE >> $SIS_CSV
+R --slave --args $SIS_CSV $SIS_JPEG < $PLOT_CMD &> /dev/null
+
+while [ ! -e $SIS_JPEG ]
+do
+  sleep 5
+done
+
+rm tmp.ph

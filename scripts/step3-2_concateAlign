@@ -1,0 +1,18 @@
+#!/bin/bash
+CONCATENATE_CMD="concatenate.pl"
+
+
+
+CONCATENATE_ALN=$1
+
+
+  #perform concatenation
+  ALNS=$(ls *.fasta_ali_nn|grep -v cluster|tr '\n' ' ')
+  echo " [RUN] perform concatenation"
+  $CONCATENATE_CMD --aln $ALNS --out $CONCATENATE_ALN
+  sed -i 's/X/-/g' $CONCATENATE_ALN
+  sed -i "s/\/1-[0-9]*//" $CONCATENATE_ALN
+
+
+
+

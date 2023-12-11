@@ -1,0 +1,45 @@
+#! /bin/bash
+######seting######
+
+mkdir "res_dic"
+SEQ_TMP="seq.fasta"
+CLUSTER_FILE="cluster.txt"
+CLUSTER_VS_SPECIES_TABLE="clusterTable.csv"
+SIMILARITY_FILE="pairwiseSim.fasta"
+
+HCLUSTER_CMD="hcluster_sg"
+BLAST_CMD="blastpgp"
+FORMATDB_CMD="formatdb"
+CLUSTER2TABLE_CMD="summary_cluster.pl"
+SPLIT_CMD="splitFasta2singleSeq.pl"
+
+BLAST_THE="1e-3"
+MIN_EDGE_WEIGHT=5
+#########################################
+
+#preprocessing
+
+cp $1 $SEQ_TMP
+
+####generate similarity between seqs by blast evalue####
+#formatdb for blastpgp
+if [ ! -e $SIMILARITY_FILE ]
+then
+  echo " [RUN] formatdb $SEQ_TMP"
+  $FORMATDB_CMD -i $SEQ_TMP
+  echo " [RUN] calculate sequence similarity by BLASTPGP"
+  $SPLIT_CMD $SEQ_TMP
+  ls tmp*.fasta|while read file
+  do
+    echo "	process:$file"
+    $BLAST_CMD -j 1 -h $BLAST_THE -e $BLAST_THE -d $SEQ_TMP -i $file -m 8|awk '{
+	    if($11<1e-199)
+		    sim=100;
+	    else
+		    sim=(-log($11)/log(10))/2+0.5;
+	    printf("%s\t%s\t%d\n",$1,$2,sim)
+    }' >> $SIMILARITY_FILE
+  done
+fi
+#########################################################
+

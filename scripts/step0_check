@@ -1,0 +1,38 @@
+#!/bin/bash
+######seting########################################
+AA_FILE=$1
+NN_FILE=$2
+ANA_DIC=$3
+SPECIES_LIST="$ANA_DIC/species_count.tsv"
+####################################################
+
+#preprocessing
+[ ! -d $ANA_DIC ] && mkdir $ANA_DIC
+
+######STEP 0: check sequence ID#################
+grep ">" $AA_FILE|sort > list1.tmp
+grep ">" $NN_FILE|sort > list2.tmp
+
+echo -n "[STEP-0] checking whether ID are same in protein and nuclear files ... "
+if  diff list1.tmp list2.tmp > /dev/null;
+then
+  echo "OK"
+else
+  echo "FAILED" && echo "Please check ID in $AA_FILE and $NN_FILE "
+  exit
+fi
+awk -F_ '{print $NF}' list1.tmp|sort|uniq > list.tmp
+
+echo "	# of seqs   = "$(wc -l list1.tmp|awk '{print $1}')
+echo "	# of species= "$(wc -l list.tmp|awk '{print $1}')
+echo "	species list= $SPECIES_LIST"
+
+echo -e "Species\tCount" > $SPECIES_LIST
+cat list.tmp|while read species
+do
+  count=$(grep "$species$" list1.tmp|wc -l)
+  echo $species $count >>  $SPECIES_LIST
+done
+
+rm *.tmp
+####################################################

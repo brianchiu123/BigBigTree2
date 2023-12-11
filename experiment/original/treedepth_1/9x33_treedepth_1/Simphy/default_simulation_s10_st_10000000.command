@@ -1,0 +1,1 @@
+./simphy_lnx64 -i DL_default.conf -o default_simulation_s10_st_10000000 

@@ -1,0 +1,26 @@
+#!/bin/bash
+CONCATENATE_TREE=$1
+FINAL_TREE=$2
+
+
+echo "[STEP 4-3] merge sub-group in concatenate tree"
+# echo "INPUT= $CONCATENATE_TREE $FINAL_TREE $TREE_DIC"
+D1=$(date +%s)
+cp $CONCATENATE_TREE $FINAL_TREE
+ls cluster*.ph|while read file
+do
+        echo " Replace $file"
+        cluster=${file/.ph/}
+	cluster=${cluster##*/}
+        tree=$(cat $file)
+        tree=${tree/;/} #delete the last ";" of newick file
+        ANN=${tree##*)} #get the [&&NHX] annotation of the root
+        tree=${tree%[*} #get whole tree without [&&NHX] annotation of the root
+        tree=${tree//\//\\\/} #handle follow case, [&&NHX:D=N:S=Homo/Pan/Gorilla:B=5:XN=3]
+        perl -pi -e "s/$cluster:(\d+.\d+|100000|0)\[&&NHX:XN=1\]/$tree:\$1 $ANN/" $FINAL_TREE
+	perl -pi -e "s/$cluster:(\d+.\d+|100000|0)/$tree:\$1 $ANN/" $FINAL_TREE
+done
+sed -i "s/ \[/\[/g" $FINAL_TREE
+D2=$(date +%s)
+
+exit
