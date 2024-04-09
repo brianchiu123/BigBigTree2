@@ -1,7 +1,7 @@
 nextflow.enable.dsl=2
 
 params.aa="$baseDir/example/aa1.fasta"
-params.speciesTree="$baseDir/example/test_species.ph"
+params.speciesTree="$baseDir/example/speciesTree.ph"
 params.nn="$baseDir/example/nn1.fasta"
 params.cluster_dir='res_dic/cluster'
 params.msa_mode='tcoffee'
@@ -9,7 +9,7 @@ params.tcoffee_mode='fmcoffee'
 params.cluster_Number='5'
 params.py_diff="$baseDir/scripts/fasta_dif.py"
 params.logfile="$baseDir/nextflow.log"
-params.tree_mode="phyml"
+params.tree_mode="raxml"
 params.file_path=".file_path"
 params.output="$baseDir/output"
 
@@ -207,7 +207,7 @@ process step3_2_deal_filename{
     input:
     file aa
 
-    // file p 
+    file p 
 
     output:
     path '*.aln_aa' ,emit: alnfa
@@ -224,7 +224,7 @@ process step3_2_deal_duplicate{
     input:
     file nn 
     file aa 
-    // file p from path_file
+    file p
 
     output:
     path "*.fasta_ali_nn" ,emit: aln_nn_tocon
@@ -244,7 +244,7 @@ process step3_2_concatenate{
 
     input:
     path nn_tocon 
-    // file p from path_file
+    file p 
 
     output:
     path 'concatenation.fasta_aln' ,emit: concatenate_output
@@ -260,7 +260,7 @@ process step4_1_produce_treebest {
 
     input:
     path con_fasta_aln 
-    //file p from path_file
+    file p
 
     output:
     path 'concatenation.ph' ,emit : con_ph_best
@@ -280,7 +280,7 @@ process step4_1_produce_tree_phyml {
 
     input:
     path con_fasta_aln 
-    //file p from path_file
+    file p
 
     output:
     path 'concatenation.ph' ,emit: con_ph_phy
@@ -302,10 +302,10 @@ process step4_1_produce_tree_phyml {
 }
 
 process step4_1_produce_raxml {
-    label 'raxml'
+
     input:
     path con_fasta_aln 
-    //file p from path_file
+    file p 
 
     output:
     path 'concatenation.ph' ,emit: con_ph_raxml
@@ -315,7 +315,7 @@ process step4_1_produce_raxml {
 
     script:
     """
-    raxml-ng --msa concatenation.fasta_aln --model GTR+G --thread 4 --seed 2
+    raxml-ng --msa $con_fasta_aln --model GTR+G --thread AUTO --seed 2 --force perf_threads;
     mv *.bestTree concatenation.ph
     """
 }
@@ -324,7 +324,7 @@ process step4_2_deal_cluster{
 	
     input:
     path nnn 
-    //file p from path_file
+    file p 
 
     output:
     path 'cluster*.aln_nn' ,emit :aln_4_2
@@ -344,7 +344,7 @@ process step4_2_produce_tree {
     path aln_nn 
     path con 
     path speciesTree 
-    //file p from path_file
+    file p 
 
     output:
     path '*.ph' ,emit: clu_ph
@@ -367,7 +367,7 @@ process step4_2_produce_tree_phyml {
     path aln_nn 
     path con 
     path speciesTree
-    //file p from path_file
+    file p 
 
     output:
     path '*.ph' ,emit: clu_ph_phy
@@ -397,7 +397,7 @@ process step4_2_produce_tree_raxml {
     path aln_nn 
     path con 
     path speciesTree 
-    //file p from path_file
+    file p
 
     output:
     path '*.ph' ,emit:clu_ph_raxml
@@ -406,6 +406,7 @@ process step4_2_produce_tree_raxml {
         params.tree_mode == 'raxml'
 
     //use simphy to generate subtree
+/*
     script:
     """
     touch tempp.code
@@ -415,7 +416,7 @@ process step4_2_produce_tree_raxml {
     phyml -i tempp -b 0
     postprocess-4-phyml.pl tempp ${aln_nn.getBaseName()}.ph
     """
-
+*/
 /*
     script:
     """
@@ -423,13 +424,13 @@ process step4_2_produce_tree_raxml {
     """
 */
 
-/*
+
     script:
     """
-    raxml-ng --msa $aln_nn --model GTR+G --thread 4 --seed 2
+    raxml-ng --msa $aln_nn --model GTR+G --thread 4 --seed 2 --force perf_threads
     mv *.bestTree ${aln_nn.getBaseName()}.ph
     """
-*/
+
 
 }
 
@@ -440,7 +441,7 @@ process step4_3_produce_tree {
     input:
     path cluster_ph 
     path con 
-    //file p from path_file
+    file p
 
     output:
     path 'final.ph' ,emit: final_result
@@ -463,7 +464,7 @@ workflow{
     path_file=file(params.file_path)
 
     step0_check_fasta_diff(aa_file,nn_file,diff)
-    step0_check_fasta_diff.out.result.subscribe {println it}
+    //step0_check_fasta_diff.out.result.subscribe {println it}
 
     step1_1cluster(aa_file)
     SIMILARITY_FILE  = step1_1cluster.out.SIMILARITY_FILE
@@ -511,31 +512,31 @@ workflow{
         .concat(aln_fasta_nn_4_1_mafft)
 
     
-    step3_2_deal_filename(aln_fasta_aa_3_2_compose.collect())
+    step3_2_deal_filename(aln_fasta_aa_3_2_compose.collect(),path_file)
     alnfa = step3_2_deal_filename.out.alnfa
 
-    step3_2_deal_duplicate(aln_fasta_nn_compose.collect(),alnfa.flatten())
+    step3_2_deal_duplicate(aln_fasta_nn_compose.collect(),alnfa.flatten(),path_file)
     aln_nn_tocon = step3_2_deal_duplicate.out.aln_nn_tocon
 
-    step3_2_concatenate(aln_nn_tocon.collect())
+    step3_2_concatenate(aln_nn_tocon.collect(),path_file)
     //step3_2_concatenate.out.concatenate_output.view()
     concatenate_aln_best = step3_2_concatenate.out.concatenate_output
     concatenate_aln_phy = step3_2_concatenate.out.concatenate_output
     concatenate_aln_raxml = step3_2_concatenate.out.concatenate_output
 
 
-    step4_1_produce_treebest(concatenate_aln_best)
+    step4_1_produce_treebest(concatenate_aln_best,path_file)
     con_ph_best = step4_1_produce_treebest.out.con_ph_best
 
     // ???
-    step4_1_produce_tree_phyml(concatenate_aln_phy)
+    step4_1_produce_tree_phyml(concatenate_aln_phy,path_file)
     con_ph_phy = step4_1_produce_tree_phyml.out.con_ph_phy
 
     //???
-    step4_1_produce_raxml(concatenate_aln_raxml)
+    step4_1_produce_raxml(concatenate_aln_raxml,path_file)
     con_ph_raxml = step4_1_produce_raxml.out.con_ph_raxml
 
-    step4_2_deal_cluster(aln_fasta_nn_4_1_compose.collect())
+    step4_2_deal_cluster(aln_fasta_nn_4_1_compose.collect(),path_file)
     aln_4_2 = step4_2_deal_cluster.out.aln_4_2
     aln_4_2_phy = step4_2_deal_cluster.out.aln_4_2
     aln_4_2_raxml = step4_2_deal_cluster.out.aln_4_2
@@ -544,15 +545,15 @@ workflow{
     con_ph = con_ph_best
     .concat(con_ph_phy,con_ph_raxml)
 
-    step4_2_produce_tree(aln_4_2.flatten(),con_ph_best,speciesTree_file)
+    step4_2_produce_tree(aln_4_2.flatten(),con_ph_best,speciesTree_file,path_file)
     clu_ph = step4_2_produce_tree.out.clu_ph
 
     // phyml??? 
-    step4_2_produce_tree_phyml(aln_4_2_phy.flatten(),con_ph_phy,speciesTree_file)
+    step4_2_produce_tree_phyml(aln_4_2_phy.flatten(),con_ph_phy,speciesTree_file,path_file)
     clu_ph_phy = step4_2_produce_tree_phyml.out.clu_ph_phy
 
     // raxml???
-    step4_2_produce_tree_raxml(aln_4_2_raxml.flatten(),con_ph_raxml,speciesTree_file)
+    step4_2_produce_tree_raxml(aln_4_2_raxml.flatten(),con_ph_raxml,speciesTree_file,path_file)
     clu_ph_raxml = step4_2_produce_tree_raxml.out.clu_ph_raxml
 
 
@@ -560,7 +561,7 @@ workflow{
     clu_p = clu_ph
     .concat(clu_ph_phy,clu_ph_raxml)
 
-    step4_3_produce_tree(clu_p.collect(),con_ph)
+    step4_3_produce_tree(clu_p.collect(),con_ph,path_file)
 
     final_result = step4_3_produce_tree.out.final_result
 
