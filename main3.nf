@@ -1,15 +1,15 @@
 nextflow.enable.dsl=2
 
-params.aa="$baseDir/example/aa1.fasta"
+params.aa="$baseDir/SF263_prot.fa"
 params.speciesTree="$baseDir/example/speciesTree.ph"
-params.nn="$baseDir/example/nn1.fasta"
+params.nn="$baseDir/SF263_cds.fa"
 params.cluster_dir='res_dic/cluster'
 params.msa_mode='tcoffee'
 params.tcoffee_mode='fmcoffee'
 params.cluster_Number='5'
 params.py_diff="$baseDir/scripts/fasta_dif.py"
 params.logfile="$baseDir/nextflow.log"
-params.tree_mode="raxml"
+params.tree_mode="phyml"
 params.file_path=".file_path"
 params.output="$baseDir/output"
 
@@ -65,6 +65,7 @@ process step1_1cluster {
 process step1_2dif  {
 
     publishDir "${params.output}/cluster", pattern: "cluster.txt", mode: 'copy'
+    publishDir "${params.output}/uncluster", pattern: "*.fasta", mode: 'copy'
 
     input:
     path SIMILARITY_FILE
@@ -73,6 +74,7 @@ process step1_2dif  {
     output:
     path 'cluster.txt' , emit :  TEXT_CLUSTER
     path 'clusterTable.csv', emit :  CSV_CLUSTER
+    path 'unclustered_seqs.fasta', emit: UNCLUSTERED_FASTA
     stdout emit: result1_2
 	
     """

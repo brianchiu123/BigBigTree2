@@ -14,7 +14,7 @@ CLUSTER2TABLE_CMD="summary_cluster.pl"
 SPLIT_CMD="splitFasta2singleSeq.pl"
 
 BLAST_THE="1e-3"
-MIN_EDGE_WEIGHT=5
+MIN_EDGE_WEIGHT=20
 #########################################
 
 #preprocessing

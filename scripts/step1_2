@@ -1,36 +1,32 @@
-#! /bin/bash
-function checkGroupOneMember
-{
-    NUM_CANDIDATE=3
+#!/bin/bash
 
-    echo " [RUN] check cluster with only one member"
-    seqs=$(awk '{if($6==1) print $7;}' $CLUSTER_FILE|tr ',' ' ')
-	
-    for seq in ${seqs[@]}
-    do
-	echo "	[WARNING] cluster with one seq: $seq"
-	cans=$(grep $seq $SIMILARITY_FILE |sort -g -k3 -r|awk '{
-	if($1 != "'$seq'") print $1;
-	if($2 != "'$seq'") print $2;}'|head -n$NUM_CANDIDATE)
-	for can in ${cans[@]}
-	do
-		check_num=$(grep $can $CLUSTER_FILE|awk '{print $6}')
-		if [ "$check_num" != "" ] && (( $check_num >= 1 ))
-		then
-			echo "		add to group of: $can"
-			list=$(grep $can $CLUSTER_FILE|awk '{print $7}')
-			newNum=$(echo $check_num+1|bc)
-			sed -i "/$seq/d" $CLUSTER_FILE
-			perl -pi -e "s/$check_num\t$list/$newNum\t$list$seq,/" $CLUSTER_FILE
-			break
-		fi
-	done
+# Function to check clusters with only one member and handle them accordingly
+function checkGroupOneMember {
+    local num_candidates=3
+    echo " [RUN] Checking clusters with only one member"
+
+    local seqs=$(awk '$6 == 1 {print $7}' "$CLUSTER_FILE" | tr ',' ' ')
+
+    for seq in $seqs; do
+        echo "    [WARNING] Cluster with one sequence: $seq"
+        local candidates=$(grep "$seq" "$SIMILARITY_FILE" | sort -g -k3 -r | awk -v s="$seq" \
+            '$1 != s {print $1} $2 != s {print $2}' | head -n $num_candidates)
+
+        for candidate in $candidates; do
+            local check_num=$(awk -v can="$candidate" '$0 ~ can {print $6}' "$CLUSTER_FILE")
+            if [ -n "$check_num" ] && (( check_num >= 1 )); then
+                echo "    Adding to group of: $candidate"
+                local list=$(awk -v can="$candidate" '$0 ~ can {print $7}' "$CLUSTER_FILE")
+                local new_num=$((check_num + 1))
+                sed -i "/$seq/d" "$CLUSTER_FILE"
+                perl -pi -e "s/$check_num\t$list/$new_num\t$list$seq,/" "$CLUSTER_FILE"
+                break
+            fi
+        done
     done
 }
 
-######seting######
-
-
+# Set variables
 SEQ_TMP=$2
 CLUSTER_FILE="cluster.txt"
 CLUSTER_VS_SPECIES_TABLE="clusterTable.csv"
@@ -43,38 +39,43 @@ CLUSTER2TABLE_CMD="summary_cluster.pl"
 SPLIT_CMD="splitFasta2singleSeq.pl"
 
 BLAST_THE="1e-3"
-MIN_EDGE_WEIGHT=1
-#########################################
+MIN_EDGE_WEIGHT=20
 
-#########################################################
-
-#cluster sequences by HCluster
-#	-w NUM     minimum edge weight [20]
-#	-m NUM     maximum size [500]
+# Cluster sequences by HCluster
 echo " [RUN] HCluster"
-#SPECIES_NUM=$(grep ">" $SEQ_TMP|awk -F_ '{print $NF}'|sort|uniq|wc -l)
 SPECIES_NUM=$3
-echo "$SPECIES_NUM"
-echo "$SIMILARITY_FILE"
-# $HCLUSTER_CMD -w $MIN_EDGE_WEIGHT -m $SPECIES_NUM $SIMILARITY_FILE -o $CLUSTER_FILE
-$HCLUSTER_CMD -w $MIN_EDGE_WEIGHT -m $SPECIES_NUM $SIMILARITY_FILE -o $CLUSTER_FILE
-#$HCLUSTER_CMD -m 9 $SIMILARITY_FILE -o $CLUSTER_FILE
+echo "$SPECIES_NUM sequences"
+echo "Similarity file: $SIMILARITY_FILE"
+$HCLUSTER_CMD -w $MIN_EDGE_WEIGHT -m $SPECIES_NUM -o $CLUSTER_FILE "$SIMILARITY_FILE"
 
-
-
-if [ -e $CLUSTER_FILE ]
-then
-        checkGroupOneMember
-	echo "  [INF] # of clusters= "$(wc -l $CLUSTER_FILE|awk '{print $1}')
+if [ -e "$CLUSTER_FILE" ]; then
+    checkGroupOneMember
+    echo "  [INFO] Number of clusters: $(wc -l < "$CLUSTER_FILE")"
 else
-	echo "  [ERROR] no $CLUSTER_FILE, failed in HCluster"
-	exit
+    echo "  [ERROR] No $CLUSTER_FILE, failed in HCluster"
+    exit 1
 fi
 
+# Create group vs species table for analysis
+$CLUSTER2TABLE_CMD "$CLUSTER_FILE" > "$CLUSTER_VS_SPECIES_TABLE"
+
+# Identify sequences not included in any cluster
+echo "Identifying sequences not included in any cluster..."
+
+# Set variables
+SEQ_TMP=$2  # This is your full sequence dataset
+UNCLUSTERED_SEQS="unclustered_seqs.txt"
 
 
-#create group vs species table for analysis
-$CLUSTER2TABLE_CMD $CLUSTER_FILE > $CLUSTER_VS_SPECIES_TABLE
+# 提取已分群的序列ID
+awk -F'\t' '{gsub(/\r|\n/, "", $7); split($7, a, ","); for (i in a) print a[i]}' "$CLUSTER_FILE" > clustered_seq_ids.txt
 
-#####CLEAR STEP#####
-#rm $SIMILARITY_FILE $SEQ_TMP* tmp*.fasta formatdb.log
+echo "Clustered Sequence IDs:"
+cat clustered_seq_ids.txt
+
+# 从原始序列文件中删除已分类的序列
+awk 'BEGIN{while((getline < "clustered_seq_ids.txt") > 0) clustered[$1] = 1} /^>/ {p = !(substr($1, 2) in clustered)} p' "$SEQ_TMP" > unclustered_seqs.fasta
+
+echo "Unclustered Sequences saved to unclustered_seqs.fasta:"
+cat unclustered_seqs.fasta
+
