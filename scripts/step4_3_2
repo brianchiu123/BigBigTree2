@@ -1,0 +1,114 @@
+#!/bin/bash
+
+# 确保接收至少三个参数：ph_files_process, fasta_files_process, 和 unclustered_files
+if [ $# -lt 3 ]; then
+    echo "Usage: $0 <ph_files_process>... <fasta_files_process>... <unclustered_files>"
+    exit 1
+fi
+
+# 获取传递的参数
+args=("$@")
+
+# 获取最后一个参数（unclustered_files）
+unclustered_files=${args[-1]}
+
+# 获取 ph_files_process 和 fasta_files_process 的列表
+ph_files_process=()
+fasta_files_process=()
+reading_ph=true
+
+for ((i=0; i<$#-1; i++)); do
+    if [[ ${args[i]} == *.ph ]]; then
+        if $reading_ph; then
+            ph_files_process+=("${args[i]}")
+        else
+            echo "Error: fasta_files_process should not contain .ph files"
+            exit 1
+        fi
+    elif [[ ${args[i]} == *.fasta ]]; then
+        reading_ph=false
+        fasta_files_process+=("${args[i]}")
+    else
+        echo "Error: unrecognized file type ${args[i]}"
+        exit 1
+    fi
+done
+
+# 检查 unclustered_files 是否存在
+if [ ! -f "$unclustered_files" ]; then
+    echo "Error: unclustered_files not found!"
+    exit 1
+fi
+
+# 创建临时目录存储分割后的序列
+mkdir -p temp_unclustered
+chmod -R 755 temp_unclustered
+
+# 分割 unclustered_files 中的序列
+seq_count=1
+output_file=""
+
+while read line; do
+    if [[ $line == \>* ]]; then
+        if [[ -n $output_file ]]; then
+            echo -e "$seq" > "temp_unclustered/${output_file}"
+        fi
+        output_file="uncluster_temp${seq_count}.fasta"
+        seq="$line"
+        seq_count=$((seq_count + 1))
+    else
+        seq="$seq\n$line"
+    fi
+done < "$unclustered_files"
+
+# 处理最后一个文件
+if [[ -n $output_file ]]; then
+    echo -e "$seq" > "temp_unclustered/${output_file}"
+fi
+
+echo "Unclustered sequences have been split into individual files in the temp_unclustered directory."
+
+# 创建输出目录存储 MAFFT 结果
+mkdir -p mafft_results
+chmod -R 755 mafft_results
+
+
+# 记录clusterX.fasta文件的数量
+cluster_count=${#fasta_files_process[@]}
+
+# 将低相似度序列分别添加到每个聚类的序列比对中
+for unclustered_seq in temp_unclustered/uncluster_temp*.fasta; do
+    for ((i=0; i<cluster_count; i++)); do
+        aligned_cluster=${fasta_files_process[$i]}
+        output_file="mafft_results/$(basename ${unclustered_seq%.fasta})_$(basename ${aligned_cluster%.fasta}).fasta"
+        
+        echo "Running MAFFT for $unclustered_seq with $aligned_cluster"
+        echo "Contents of $unclustered_seq:"
+        cat "$unclustered_seq"
+        echo "Contents of $aligned_cluster:"
+        cat "$aligned_cluster"
+        
+        sudo mafft --add $unclustered_seq --reorder $aligned_cluster >  $output_file 
+        
+        # 检查 MAFFT 命令的退出状态
+        if [ $? -ne 0 ]; then
+            echo "Error: MAFFT failed for $unclustered_seq with $aligned_cluster"
+            exit 1
+        fi
+
+        # 检查输出文件是否为空
+        if [ ! -s "$output_file" ]; then
+            echo "Error: Output file $output_file is empty."
+            exit 1
+        fi
+
+        # 确保输出文件具有正确的权限
+        chmod 644 "$output_file"
+
+        echo "Generated MAFFT result: $output_file"
+        echo "Contents of $output_file:"
+        cat "$output_file"
+    done
+done
+
+echo "All MAFFT alignments have been generated in the mafft_results directory."

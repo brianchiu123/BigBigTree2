@@ -31,6 +31,8 @@ SEQ_TMP=$2
 CLUSTER_FILE="cluster.txt"
 CLUSTER_VS_SPECIES_TABLE="clusterTable.csv"
 SIMILARITY_FILE=$1
+AA_FILE=$2  # Path to aa_file
+NN_FILE=$3  # Path to nn_file
 
 HCLUSTER_CMD="hcluster_sg"
 BLAST_CMD="blastpgp"
@@ -40,13 +42,14 @@ SPLIT_CMD="splitFasta2singleSeq.pl"
 
 BLAST_THE="1e-3"
 MIN_EDGE_WEIGHT=20
+MIN_EDGE_DENSITY=0.3
 
 # Cluster sequences by HCluster
 echo " [RUN] HCluster"
 SPECIES_NUM=$3
 echo "$SPECIES_NUM sequences"
 echo "Similarity file: $SIMILARITY_FILE"
-$HCLUSTER_CMD -w $MIN_EDGE_WEIGHT -m $SPECIES_NUM -o $CLUSTER_FILE "$SIMILARITY_FILE"
+$HCLUSTER_CMD -w $MIN_EDGE_WEIGHT -m $SPECIES_NUM -o $CLUSTER_FILE -s $MIN_EDGE_DENSITY "$SIMILARITY_FILE"
 
 if [ -e "$CLUSTER_FILE" ]; then
     checkGroupOneMember
@@ -79,3 +82,10 @@ awk 'BEGIN{while((getline < "clustered_seq_ids.txt") > 0) clustered[$1] = 1} /^>
 echo "Unclustered Sequences saved to unclustered_seqs.fasta:"
 cat unclustered_seqs.fasta
 
+# Filter out low similarity sequences from aa_file and nn_file
+awk 'NR==FNR{a[substr($1,2)];next} /^>/{flag=!(substr($1,2) in a)} flag' unclustered_seqs.fasta $AA_FILE > filtered_aa_file.fasta
+awk 'NR==FNR{a[substr($1,2)];next} /^>/{flag=!(substr($1,2) in a)} flag' unclustered_seqs.fasta $NN_FILE > filtered_nn_file.fasta
+
+# Output the filtered files for further processing
+mv filtered_aa_file.fasta aa_file_filtered.fasta
+mv filtered_nn_file.fasta nn_file_filtered.fasta

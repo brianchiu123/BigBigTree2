@@ -1,8 +1,7 @@
 nextflow.enable.dsl=2
-
-params.aa="$baseDir/example/aa1.fasta"
+params.aa="$baseDir/PTH_Data/PTH1000/PTH1000_aa_sequences.fa"
 params.speciesTree="$baseDir/example/speciesTree.ph"
-params.nn="$baseDir/example/nn1.fasta"
+params.nn="$baseDir/PTH_Data/PTH1000/PTH1000_nn_sequences.fa"
 params.cluster_dir='res_dic/cluster'
 params.msa_mode='tcoffee'
 params.tcoffee_mode='fmcoffee'

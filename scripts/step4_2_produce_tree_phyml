@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# 输入参数
+aln_nn=$1
+
+touch tempp.code
+touch tempp
+seq_count=$(grep -c "^>" ${aln_nn})
+    
+if [ ${seq_count} -lt 3 ]; then
+    echo "Generating a simple tree for ${aln_nn}"
+    seq1=$(grep -m 1 "^>" ${aln_nn} | sed 's/>//')
+    seq2=$(grep "^>" ${aln_nn} | sed '2q;d' | sed 's/>//')
+    echo "(${seq1},${seq2});" > ${aln_nn}.ph
+else
+    t_coffee -other_pg seq_reformat -in ${aln_nn} -output code_name > tempp.code
+    t_coffee -other_pg seq_reformat -code tempp.code -in ${aln_nn} -output phylip > tempp
+    phyml -i tempp -b 0
+    postprocess-4-phyml.pl tempp ${aln_nn}.ph
+fi

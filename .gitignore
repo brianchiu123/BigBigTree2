@@ -1,3 +1,6 @@
 .nextflow*
 work/
 output/
+test_folder/
+pptest.py
+test_raxml.nf

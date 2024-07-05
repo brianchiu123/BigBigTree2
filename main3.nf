@@ -1,8 +1,8 @@
 nextflow.enable.dsl=2
 
-params.aa="$baseDir/SF263_prot.fa"
+params.aa="$baseDir/PTH_Data/PTH1000/PTH1000_aa_sequences.fa"
 params.speciesTree="$baseDir/example/speciesTree.ph"
-params.nn="$baseDir/SF263_cds.fa"
+params.nn="$baseDir/PTH_Data/corrected_sequences.fasta"
 params.cluster_dir='res_dic/cluster'
 params.msa_mode='tcoffee'
 params.tcoffee_mode='fmcoffee'
@@ -12,6 +12,7 @@ params.logfile="$baseDir/nextflow.log"
 params.tree_mode="phyml"
 params.file_path=".file_path"
 params.output="$baseDir/output"
+params.placement="$baseDir/scripts/placement.py"
 
 
 log.info """\
@@ -57,7 +58,7 @@ process step1_1cluster {
     script :
 
     """
-    step1_1  $SEQ_fasta_aa 
+    step1_1 $SEQ_fasta_aa
 	
     """
 }
@@ -69,23 +70,27 @@ process step1_2dif  {
 
     input:
     path SIMILARITY_FILE
-    path SEQ_fasta_aa 
+    path SEQ_fasta_aa
+    path SEQ_fasta_nn
 
     output:
-    path 'cluster.txt' , emit :  TEXT_CLUSTER
-    path 'clusterTable.csv', emit :  CSV_CLUSTER
+    path 'cluster.txt', emit: TEXT_CLUSTER
+    path 'clusterTable.csv', emit: CSV_CLUSTER
     path 'unclustered_seqs.fasta', emit: UNCLUSTERED_FASTA
+    path 'aa_file_filtered.fasta', emit: FILTERED_AA_FILE
+    path 'nn_file_filtered.fasta', emit: FILTERED_NN_FILE
     stdout emit: result1_2
 	
     """
-    step1_2  $SIMILARITY_FILE $SEQ_fasta_aa ${params.cluster_Number}
+    step1_2 $SIMILARITY_FILE $SEQ_fasta_aa $SEQ_fasta_nn ${params.cluster_Number}
+
     """
 }
 
 process step2_cluster_to_fasta_aa  {
 	
     input:
-    path SEQ_fasta_aa 
+    path FILTERED_AA
     path TEXT_CLUSTER 
 	 
     output:
@@ -93,7 +98,7 @@ process step2_cluster_to_fasta_aa  {
     stdout emit: result2_1	 
 
     """
-    step2_cluster-2-fasta-4-seqFasta.pl $SEQ_fasta_aa $TEXT_CLUSTER
+    step2_cluster-2-fasta-4-seqFasta.pl $FILTERED_AA $TEXT_CLUSTER
     """
 }
 
@@ -113,7 +118,8 @@ process step2_cluster_to_fasta_nn  {
 }
 
 process step3_1_alignment_aa {
-	 		
+	
+    publishDir "${params.output}/clusterTree", pattern: "*.fasta_aln_aa", mode: 'copy'
     input:
     path aa_fasta_channel 
 	
@@ -364,6 +370,9 @@ process step4_2_produce_tree {
 }
 
 process step4_2_produce_tree_phyml {
+
+    publishDir "${params.output}/clusterTree",pattern: "*.aln_nn.ph", mode: 'copy'
+    
     errorStrategy 'ignore'
     input:
     path aln_nn 
@@ -380,13 +389,7 @@ process step4_2_produce_tree_phyml {
 
     script:
     """
-    touch tempp.code
-    touch tempp
-    t_coffee -other_pg seq_reformat -in $aln_nn -output code_name>  tempp.code
-    t_coffee -other_pg seq_reformat -code  tempp.code -in  $aln_nn -output phylip > tempp
-    phyml -i tempp -b 0
-    postprocess-4-phyml.pl tempp ${aln_nn.getBaseName()}.ph
-
+    step4_2_produce_tree_phyml $aln_nn
     """
 
 }
@@ -394,7 +397,7 @@ process step4_2_produce_tree_phyml {
 process step4_2_produce_tree_raxml {
     //label 'raxml'
     errorStrategy 'ignore'
-
+    publishDir "${params.output}/clusterTree",pattern: "*.ph", mode: 'copy'
     input:
     path aln_nn 
     path con 
@@ -407,26 +410,6 @@ process step4_2_produce_tree_raxml {
     when:
         params.tree_mode == 'raxml'
 
-    //use simphy to generate subtree
-/*
-    script:
-    """
-    touch tempp.code
-    touch tempp
-    t_coffee -other_pg seq_reformat -in $aln_nn -output code_name>  tempp.code
-    t_coffee -other_pg seq_reformat -code  tempp.code -in  $aln_nn -output phylip > tempp
-    phyml -i tempp -b 0
-    postprocess-4-phyml.pl tempp ${aln_nn.getBaseName()}.ph
-    """
-*/
-/*
-    script:
-    """
-    treebest best -o ${aln_nn.getBaseName()}".ph" $aln_nn -f $speciesTree
-    """
-*/
-
-
     script:
     """
     raxml-ng --msa $aln_nn --model GTR+G --thread 4 --seed 2 --force perf_threads
@@ -436,7 +419,43 @@ process step4_2_produce_tree_raxml {
 
 }
 
-process step4_3_produce_tree {
+
+process step4_3_1_placement_trees {
+
+    
+    input:
+    path ph_files
+    path fasta_files
+
+    output:
+    path '*.ph', emit: ph_files_processed
+    path '*.fasta', emit: fasta_files_processed
+
+    script:
+    """
+    step4_3_1 ${ph_files} ${fasta_files}
+    """
+}
+
+process step4_3_2_placement_trees {
+
+    
+    input:
+    path place_py
+    path ph_files_process
+    path fasta_files_process
+    path unclustered_files
+    
+
+
+    script:
+    """
+    python3 ${place_py} ${ph_files_process} ${fasta_files_process} ${unclustered_files}
+    """
+
+}
+
+process step4_4_produce_tree {
 
     publishDir "${params.output}/final_tree", pattern: "*.ph", mode: 'copy'
 
@@ -464,26 +483,35 @@ workflow{
     diff= file(params.py_diff)
     log_file=file(params.logfile)
     path_file=file(params.file_path)
+    place_py = file(params.placement)
 
-    step0_check_fasta_diff(aa_file,nn_file,diff)
+    SEQ_aa = file(params.aa)
+    SEQ_nn = file(params.nn)
+    diff_in = file(params.py_diff)
+
+    step0 = step0_check_fasta_diff(SEQ_aa, SEQ_nn, diff_in)
     //step0_check_fasta_diff.out.result.subscribe {println it}
 
-    step1_1cluster(aa_file)
+    step1_1 = step1_1cluster(SEQ_aa)
+    //step1_1cluster(aa_file)
     SIMILARITY_FILE  = step1_1cluster.out.SIMILARITY_FILE
 
-    step1_2dif(SIMILARITY_FILE,aa_file)
+
+    step1_2 = step1_2dif(SIMILARITY_FILE,SEQ_aa,SEQ_nn)
     TEXT_CLUSTER = step1_2dif.out.TEXT_CLUSTER
     CSV_CLUSTER = step1_2dif.out.CSV_CLUSTER
 
+    FILTERED_AA_FILE = step1_2dif.out.FILTERED_AA_FILE
+    FILTERED_NN_FILE = step1_2dif.out.FILTERED_NN_FILE
 
-
-    step2_cluster_to_fasta_aa(aa_file,TEXT_CLUSTER)
+    step2 = step2_cluster_to_fasta_aa(FILTERED_AA_FILE, TEXT_CLUSTER)
+    //step2_cluster_to_fasta_aa(aa_file,TEXT_CLUSTER)
     cluster_fasta_aa = step2_cluster_to_fasta_aa.out.c
     cluster_fasta_aa_mafft = step2_cluster_to_fasta_aa.out.c
 
 
 
-    step2_cluster_to_fasta_nn(nn_file,TEXT_CLUSTER)
+    step2_cluster_to_fasta_nn(FILTERED_NN_FILE,TEXT_CLUSTER)
     cluster_fasta_nn = step2_cluster_to_fasta_nn.out.n
     cluster_fasta_nn_mafft = step2_cluster_to_fasta_nn.out.n
 
@@ -558,14 +586,31 @@ workflow{
     step4_2_produce_tree_raxml(aln_4_2_raxml.flatten(),con_ph_raxml,speciesTree_file,path_file)
     clu_ph_raxml = step4_2_produce_tree_raxml.out.clu_ph_raxml
 
+    params.unclustered = file("${params.output}/uncluster/unclustered_seqs.fasta")
+
+    // .aln_nn.ph 和 .fasta_aln_nn 文件
+    ph_files = step4_2_produce_tree_phyml.out.clu_ph_phy
+    fasta_files = step3_1_alignment_aa.out.step_3_1
+    
+    step4_3_1_placement_trees(ph_files.collect(),fasta_files.collect())
+
+
+    ph_files_process = step4_3_1_placement_trees.out.ph_files_processed
+    fasta_files_process = step4_3_1_placement_trees.out.fasta_files_processed
+    unclustered_files = step1_2dif.out.UNCLUSTERED_FASTA
+    step4_3_2_placement_trees(place_py,ph_files_process,fasta_files_process,unclustered_files)
+
+
+    
+
 
     //merge
     clu_p = clu_ph
     .concat(clu_ph_phy,clu_ph_raxml)
 
-    step4_3_produce_tree(clu_p.collect(),con_ph,path_file)
+    step4_4_produce_tree(clu_p.collect(),con_ph,path_file)
 
-    final_result = step4_3_produce_tree.out.final_result
+    final_result = step4_4_produce_tree.out.final_result
 
 
 }
