@@ -8,7 +8,7 @@ params.placement="$baseDir/scripts/placement.py"
 
 
 process step4_3_2_placement_trees {
-
+    cpus 4 
     
     input:
     path place_py

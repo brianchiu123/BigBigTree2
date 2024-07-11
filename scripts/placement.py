@@ -5,13 +5,13 @@ import subprocess
 import re
 
 def run_mafft(unclustered_seq, aligned_cluster, output_file):
-    cmd = f"sudo mafft --add {unclustered_seq} --reorder {aligned_cluster} > {output_file}"
+    cmd = f"sudo mafft --leavegappyregion --add {unclustered_seq} --reorder {aligned_cluster} > {output_file}"
     result = subprocess.run(cmd, shell=True)
     if result.returncode != 0:
         raise RuntimeError(f"MAFFT failed for {unclustered_seq} with {aligned_cluster}")
 
 def run_raxml(combined_fasta, cluster_tree, output_prefix):
-    cmd = f"raxmlHPC-PTHREADS-AVX -T 1 -f v -s {combined_fasta} -t {cluster_tree} -m PROTGAMMAAUTO -n {output_prefix}"
+    cmd = f"rm -f RAxML* && raxmlHPC-PTHREADS-AVX -T 16 -f v -s {combined_fasta} -t {cluster_tree} -m PROTGAMMAAUTO -N 1 -n {output_prefix}"
     result = subprocess.run(cmd, shell=True)
     if result.returncode != 0:
         raise RuntimeError(f"RAxML failed for {combined_fasta} with {cluster_tree}")
@@ -61,49 +61,64 @@ def process_labelled_tree(labelled_tree):
     with open(labelled_tree, 'w') as file:
         file.write(content)
 
-def main(ph_files_process, fasta_files_process, unclustered_files):
-    # Filter out clusters with less than or equal to 3 sequences
-    fasta_files_process = filter_clusters_by_size(fasta_files_process, threshold=3)
-    print(f"Filtered FASTA files: {fasta_files_process}")
-    
+def split_unclustered_seqs(unclustered_file):
     unclustered_seqs = []
-    with open(unclustered_files, 'r') as f:
+    seq_num = 0
+    with open(unclustered_file, 'r') as f:
         seq = ""
         for line in f:
             if line.startswith(">"):
                 if seq:
-                    unclustered_seqs.append(seq)
+                    output_file = f"temp_unclustered_seq_{seq_num}.fasta"
+                    with open(output_file, 'w') as temp_f:
+                        temp_f.write(seq)
+                    unclustered_seqs.append(output_file)
+                    seq_num += 1
                 seq = line
             else:
                 seq += line
         if seq:
-            unclustered_seqs.append(seq)
+            output_file = f"temp_unclustered_seq_{seq_num}.fasta"
+            with open(output_file, 'w') as temp_f:
+                temp_f.write(seq)
+            unclustered_seqs.append(output_file)
+    return unclustered_seqs
+
+def main(ph_files_process, fasta_files_process, unclustered_file):
+    # Filter out clusters with less than or equal to 3 sequences
+    fasta_files_process = filter_clusters_by_size(fasta_files_process, threshold=3)
+    print(f"Filtered FASTA files: {fasta_files_process}")
+    
+    # Split unclustered sequences into separate files
+    unclustered_seqs = split_unclustered_seqs(unclustered_file)
+    print(f"Unclustered sequences split into files: {unclustered_seqs}")
 
     round_num = 1
     processed_unclustered_seqs = []
 
+
     while unclustered_seqs:
         mafft_results_dir = f"mafft_results_round_{round_num}"
+        raxml_results_dir = f"raxml_results_round_{round_num}"
         os.makedirs(mafft_results_dir, exist_ok=True)
+        os.makedirs(raxml_results_dir, exist_ok=True)
         scores = []
-        for unclustered_seq in unclustered_seqs:
+        for i, unclustered_seq in enumerate(unclustered_seqs):
             best_score = float('-inf')
             best_tree = ""
             best_fasta = ""
             for fasta_file in fasta_files_process:
                 cluster_id = os.path.basename(fasta_file).split('.')[0]
-                output_file = f"{mafft_results_dir}/uncluster_temp_{cluster_id}.fasta"
+                output_file = f"{mafft_results_dir}/uncluster_temp_{cluster_id}_{i}.fasta"
                 
-                # Write the unclustered_seq to a temp file for MAFFT
-                unclustered_seq_file = f"temp_unclustered_seq_{round_num}.fasta"
-                with open(unclustered_seq_file, 'w') as temp_f:
-                    temp_f.write(unclustered_seq)
-                
-                run_mafft(unclustered_seq_file, fasta_file, output_file)
+                run_mafft(unclustered_seq, fasta_file, output_file)
                 
                 combined_fasta = output_file
+                if os.path.exists(f"{output_file}.reduce"):
+                    os.remove(f"{output_file}.reduce")
+                
                 cluster_tree = f"{cluster_id}.ph"
-                raxml_output_prefix = f"raxml_uncluster_temp_{round_num}_{cluster_id}"
+                raxml_output_prefix = f"raxml_uncluster_temp_{round_num}_{cluster_id}_{i}"
                 
                 try:
                     labelled_tree, portable_tree = run_raxml(combined_fasta, cluster_tree, raxml_output_prefix)
@@ -113,6 +128,9 @@ def main(ph_files_process, fasta_files_process, unclustered_files):
                         best_score = score
                         best_tree = labelled_tree
                         best_fasta = combined_fasta
+                    # Save RAxML and MAFFT results
+                    os.rename(labelled_tree, os.path.join(raxml_results_dir, f"{os.path.basename(labelled_tree)}"))
+                    os.rename(combined_fasta, os.path.join(raxml_results_dir, os.path.basename(combined_fasta)))
                 except RuntimeError as e:
                     print(e)
                     continue
@@ -123,21 +141,20 @@ def main(ph_files_process, fasta_files_process, unclustered_files):
         scores.sort(reverse=True, key=lambda x: x[0])
         chosen_clusters = set()
         for score, tree, fasta, unclustered_seq in scores:
-            cluster_id = os.path.basename(tree).split('_')[-1]
-            if cluster_id not in chosen_clusters:
+            cluster_id = os.path.basename(tree).split('_')[-2]
+            if cluster_id not in chosen_clusters and tree:
                 chosen_clusters.add(cluster_id)
                 print(f"Round {round_num}: Best score for cluster {cluster_id} is {score}, with tree {tree} and fasta {fasta}")
                 # Replace the original cluster files with the new ones
-                os.replace(fasta, f"{cluster_id}.fasta")
-                os.replace(tree, f"{cluster_id}.ph")
+                final_fasta = os.path.join(raxml_results_dir, os.path.basename(fasta))
+                final_tree = os.path.join(raxml_results_dir, os.path.basename(tree))
+                os.replace(final_fasta, f"{cluster_id}.fasta")
+                os.replace(final_tree, f"{cluster_id}.ph")
+           
                 processed_unclustered_seqs.append(unclustered_seq)
         
         # Remove processed unclustered sequences
         unclustered_seqs = [seq for seq in unclustered_seqs if seq not in processed_unclustered_seqs]
-        
-        # Clean up MAFFT results directory
-        for file in os.listdir(mafft_results_dir):
-            os.remove(os.path.join(mafft_results_dir, file))
         
         round_num += 1
         if not unclustered_seqs:
@@ -146,12 +163,13 @@ def main(ph_files_process, fasta_files_process, unclustered_files):
 if __name__ == "__main__":
     ph_files_process = [file for file in sys.argv[1:] if file.endswith('.ph')]
     fasta_files_process = [file for file in sys.argv[1:] if file.endswith('.fasta') and 'uncluster' not in file]
-    unclustered_files = sys.argv[-1]
+    unclustered_file = sys.argv[-1]
     
     print(f"sys.argv: {sys.argv}")
     print(f"Received files:")
     print(f"PH files: {ph_files_process}")
     print(f"FASTA files: {fasta_files_process}")
-    print(f"Unclustered file: {unclustered_files}")
+    print(f"Unclustered file: {unclustered_file}")
     
-    main(ph_files_process, fasta_files_process, unclustered_files)
+    main(ph_files_process, fasta_files_process, unclustered_file)
+

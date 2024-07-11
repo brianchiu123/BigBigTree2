@@ -2,18 +2,18 @@ nextflow.enable.dsl=2
 
 params.aa="$baseDir/PTH_Data/PTH1000/PTH1000_aa_sequences.fa"
 params.speciesTree="$baseDir/example/speciesTree.ph"
-params.nn="$baseDir/PTH_Data/corrected_sequences.fasta"
+params.nn="$baseDir/PTH_Data/PTH1000/PTH1000_nn_sequences.fa"
 params.cluster_dir='res_dic/cluster'
 params.msa_mode='tcoffee'
 params.tcoffee_mode='fmcoffee'
 params.cluster_Number='5'
 params.py_diff="$baseDir/scripts/fasta_dif.py"
 params.logfile="$baseDir/nextflow.log"
-params.tree_mode="phyml"
+params.tree_mode="raxml"
 params.file_path=".file_path"
 params.output="$baseDir/output"
 params.placement="$baseDir/scripts/placement.py"
-
+params.aaFileTonn="$baseDir/scripts/step3_1_aa2nn.py"
 
 log.info """\
          R N A T O Y   P I P E L I N E    
@@ -47,7 +47,7 @@ process step0_check_fasta_diff{
 }
 
 process step1_1cluster {
-	 
+    cpus 16
     input:	
     file SEQ_fasta_aa 
 
@@ -64,7 +64,7 @@ process step1_1cluster {
 }
 
 process step1_2dif  {
-
+    cpus 16
     publishDir "${params.output}/cluster", pattern: "cluster.txt", mode: 'copy'
     publishDir "${params.output}/uncluster", pattern: "*.fasta", mode: 'copy'
 
@@ -88,7 +88,7 @@ process step1_2dif  {
 }
 
 process step2_cluster_to_fasta_aa  {
-	
+	cpus 16
     input:
     path FILTERED_AA
     path TEXT_CLUSTER 
@@ -103,6 +103,7 @@ process step2_cluster_to_fasta_aa  {
 }
 
 process step2_cluster_to_fasta_nn  {
+    cpus 16
     input:
     path SEQ_fasta_nn 
     path TEXT_CLUSTER 
@@ -118,7 +119,7 @@ process step2_cluster_to_fasta_nn  {
 }
 
 process step3_1_alignment_aa {
-	
+	cpus 16
     publishDir "${params.output}/clusterTree", pattern: "*.fasta_aln_aa", mode: 'copy'
     input:
     path aa_fasta_channel 
@@ -141,6 +142,7 @@ process step3_1_alignment_aa {
 process step3_1_alignment_nn {
 	
     input:
+    path aa2nn_py
     path alnaa 
     path nnf 
 
@@ -153,7 +155,8 @@ process step3_1_alignment_nn {
 
     script:
     """	
-    t_coffee -other_pg seq_reformat -in $nnf   -in2 $nnf"_aln_aa"  -action +thread_dna_on_prot_aln -output fasta >   $nnf"_aln_nn"
+
+    python3 ${aa2nn_py} $nnf $nnf"_aln_aa" fixed_$nnf $nnf"_aln_nn"
 			
     """	 
 
@@ -247,7 +250,7 @@ process step3_2_deal_duplicate{
 }
 
 process step3_2_concatenate{
-
+    cpus 16
     publishDir "${params.output}/concatenation", pattern: "*_aln", mode: 'copy'
 
     input:
@@ -285,7 +288,7 @@ process step4_1_produce_treebest {
 }
 
 process step4_1_produce_tree_phyml {
-
+    cpus 16
     input:
     path con_fasta_aln 
     file p
@@ -310,7 +313,7 @@ process step4_1_produce_tree_phyml {
 }
 
 process step4_1_produce_raxml {
-
+    cpus 16
     input:
     path con_fasta_aln 
     file p 
@@ -323,7 +326,7 @@ process step4_1_produce_raxml {
 
     script:
     """
-    raxml-ng --msa $con_fasta_aln --model GTR+G --thread AUTO --seed 2 --force perf_threads;
+    raxml-ng --msa $con_fasta_aln --model GTR+G --thread 16 --seed 2 --opt-branches on --force perf_threads;
     mv *.bestTree concatenation.ph
     """
 }
@@ -372,7 +375,7 @@ process step4_2_produce_tree {
 process step4_2_produce_tree_phyml {
 
     publishDir "${params.output}/clusterTree",pattern: "*.aln_nn.ph", mode: 'copy'
-    
+    cpus 16
     errorStrategy 'ignore'
     input:
     path aln_nn 
@@ -395,6 +398,7 @@ process step4_2_produce_tree_phyml {
 }
 
 process step4_2_produce_tree_raxml {
+    cpus 16
     //label 'raxml'
     errorStrategy 'ignore'
     publishDir "${params.output}/clusterTree",pattern: "*.ph", mode: 'copy'
@@ -412,7 +416,7 @@ process step4_2_produce_tree_raxml {
 
     script:
     """
-    raxml-ng --msa $aln_nn --model GTR+G --thread 4 --seed 2 --force perf_threads
+    raxml-ng --msa $aln_nn --model GTR+G --thread 16 --seed 2  --opt-branches on --force perf_threads
     mv *.bestTree ${aln_nn.getBaseName()}.ph
     """
 
@@ -422,14 +426,15 @@ process step4_2_produce_tree_raxml {
 
 process step4_3_1_placement_trees {
 
-    
+    cpus 16
+
     input:
     path ph_files
     path fasta_files
 
     output:
-    path '*.ph', emit: ph_files_processed
-    path '*.fasta', emit: fasta_files_processed
+    path 'output_file/*.ph', emit: ph_files_processed
+    path 'output_file/*.fasta', emit: fasta_files_processed
 
     script:
     """
@@ -439,18 +444,21 @@ process step4_3_1_placement_trees {
 
 process step4_3_2_placement_trees {
 
-    
+    cpus 16
     input:
     path place_py
     path ph_files_process
     path fasta_files_process
     path unclustered_files
-    
 
+    output :
+    path 'output_files/*.ph' ,emit: merge_ph
 
     script:
     """
     python3 ${place_py} ${ph_files_process} ${fasta_files_process} ${unclustered_files}
+    mkdir -p output_files
+    cp *.ph output_files/
     """
 
 }
@@ -484,6 +492,7 @@ workflow{
     log_file=file(params.logfile)
     path_file=file(params.file_path)
     place_py = file(params.placement)
+    aa2nn_py = file(params.aaFileTonn)
 
     SEQ_aa = file(params.aa)
     SEQ_nn = file(params.nn)
@@ -521,7 +530,7 @@ workflow{
     aln_fasta_aa = step3_1_alignment_aa.out.step_3_1
     aln_fasta_aa_3_2 = step3_1_alignment_aa.out.step_3_1
 
-    step3_1_alignment_nn(aln_fasta_aa.collect(),cluster_fasta_nn.flatten())
+    step3_1_alignment_nn(aa2nn_py,aln_fasta_aa.collect(),cluster_fasta_nn.flatten())
     aln_fasta_nn = step3_1_alignment_nn.out.step3_1_nn
     aln_fasta_nn_4_1 = step3_1_alignment_nn.out.step3_1_nn
 
@@ -589,10 +598,11 @@ workflow{
     params.unclustered = file("${params.output}/uncluster/unclustered_seqs.fasta")
 
     // .aln_nn.ph 和 .fasta_aln_nn 文件
-    ph_files = step4_2_produce_tree_phyml.out.clu_ph_phy
+    ph_files_phyml = step4_2_produce_tree_phyml.out.clu_ph_phy
+    ph_files_raxml = step4_2_produce_tree_raxml.out.clu_ph_raxml
     fasta_files = step3_1_alignment_aa.out.step_3_1
     
-    step4_3_1_placement_trees(ph_files.collect(),fasta_files.collect())
+    step4_3_1_placement_trees(ph_files_raxml.collect(),fasta_files.collect())
 
 
     ph_files_process = step4_3_1_placement_trees.out.ph_files_processed
@@ -602,13 +612,13 @@ workflow{
 
 
     
-
+    final_merge_ph = step4_3_2_placement_trees.out.merge_ph
 
     //merge
     clu_p = clu_ph
     .concat(clu_ph_phy,clu_ph_raxml)
 
-    step4_4_produce_tree(clu_p.collect(),con_ph,path_file)
+    step4_4_produce_tree(final_merge_ph.collect(),con_ph,path_file)
 
     final_result = step4_4_produce_tree.out.final_result
 

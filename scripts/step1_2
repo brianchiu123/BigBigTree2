@@ -2,28 +2,17 @@
 
 # Function to check clusters with only one member and handle them accordingly
 function checkGroupOneMember {
-    local num_candidates=3
     echo " [RUN] Checking clusters with only one member"
 
-    local seqs=$(awk '$6 == 1 {print $7}' "$CLUSTER_FILE" | tr ',' ' ')
+    local seqs=$(awk '$6 <= 3 {print $7}' "$CLUSTER_FILE" | tr ',' ' ')
 
     for seq in $seqs; do
         echo "    [WARNING] Cluster with one sequence: $seq"
-        local candidates=$(grep "$seq" "$SIMILARITY_FILE" | sort -g -k3 -r | awk -v s="$seq" \
-            '$1 != s {print $1} $2 != s {print $2}' | head -n $num_candidates)
-
-        for candidate in $candidates; do
-            local check_num=$(awk -v can="$candidate" '$0 ~ can {print $6}' "$CLUSTER_FILE")
-            if [ -n "$check_num" ] && (( check_num >= 1 )); then
-                echo "    Adding to group of: $candidate"
-                local list=$(awk -v can="$candidate" '$0 ~ can {print $7}' "$CLUSTER_FILE")
-                local new_num=$((check_num + 1))
-                sed -i "/$seq/d" "$CLUSTER_FILE"
-                perl -pi -e "s/$check_num\t$list/$new_num\t$list$seq,/" "$CLUSTER_FILE"
-                break
-            fi
-        done
+        echo "$seq" >> "$UNCLUSTERED_SEQS"
     done
+
+    # Remove clusters with one member
+    awk '$6 > 3' "$CLUSTER_FILE" > tmp_cluster.txt && mv tmp_cluster.txt "$CLUSTER_FILE"
 }
 
 # Set variables
@@ -41,15 +30,15 @@ CLUSTER2TABLE_CMD="summary_cluster.pl"
 SPLIT_CMD="splitFasta2singleSeq.pl"
 
 BLAST_THE="1e-3"
-MIN_EDGE_WEIGHT=20
-MIN_EDGE_DENSITY=0.3
+MIN_EDGE_WEIGHT=10
+MIN_EDGE_DENSITY=0.7
 
 # Cluster sequences by HCluster
 echo " [RUN] HCluster"
 SPECIES_NUM=$3
 echo "$SPECIES_NUM sequences"
 echo "Similarity file: $SIMILARITY_FILE"
-$HCLUSTER_CMD -w $MIN_EDGE_WEIGHT -m $SPECIES_NUM -o $CLUSTER_FILE -s $MIN_EDGE_DENSITY "$SIMILARITY_FILE"
+$HCLUSTER_CMD -w $MIN_EDGE_WEIGHT -o $CLUSTER_FILE -s $MIN_EDGE_DENSITY "$SIMILARITY_FILE"
 
 if [ -e "$CLUSTER_FILE" ]; then
     checkGroupOneMember
@@ -67,8 +56,7 @@ echo "Identifying sequences not included in any cluster..."
 
 # Set variables
 SEQ_TMP=$2  # This is your full sequence dataset
-UNCLUSTERED_SEQS="unclustered_seqs.txt"
-
+UNCLUSTERED_SEQS="unclustered_seqs.fasta"
 
 # 提取已分群的序列ID
 awk -F'\t' '{gsub(/\r|\n/, "", $7); split($7, a, ","); for (i in a) print a[i]}' "$CLUSTER_FILE" > clustered_seq_ids.txt
@@ -77,14 +65,14 @@ echo "Clustered Sequence IDs:"
 cat clustered_seq_ids.txt
 
 # 从原始序列文件中删除已分类的序列
-awk 'BEGIN{while((getline < "clustered_seq_ids.txt") > 0) clustered[$1] = 1} /^>/ {p = !(substr($1, 2) in clustered)} p' "$SEQ_TMP" > unclustered_seqs.fasta
+awk 'BEGIN{while((getline < "clustered_seq_ids.txt") > 0) clustered[$1] = 1} /^>/ {p = !(substr($1, 2) in clustered)} p' "$SEQ_TMP" > "$UNCLUSTERED_SEQS"
 
-echo "Unclustered Sequences saved to unclustered_seqs.fasta:"
-cat unclustered_seqs.fasta
+echo "Unclustered Sequences saved to $UNCLUSTERED_SEQS:"
+cat "$UNCLUSTERED_SEQS"
 
 # Filter out low similarity sequences from aa_file and nn_file
-awk 'NR==FNR{a[substr($1,2)];next} /^>/{flag=!(substr($1,2) in a)} flag' unclustered_seqs.fasta $AA_FILE > filtered_aa_file.fasta
-awk 'NR==FNR{a[substr($1,2)];next} /^>/{flag=!(substr($1,2) in a)} flag' unclustered_seqs.fasta $NN_FILE > filtered_nn_file.fasta
+awk 'NR==FNR{a[substr($1,2)];next} /^>/{flag=!(substr($1,2) in a)} flag' "$UNCLUSTERED_SEQS" "$AA_FILE" > filtered_aa_file.fasta
+awk 'NR==FNR{a[substr($1,2)];next} /^>/{flag=!(substr($1,2) in a)} flag' "$UNCLUSTERED_SEQS" "$NN_FILE" > filtered_nn_file.fasta
 
 # Output the filtered files for further processing
 mv filtered_aa_file.fasta aa_file_filtered.fasta

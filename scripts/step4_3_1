@@ -2,21 +2,32 @@
 
 # 确保接收至少两个参数
 if [ $# -lt 2 ]; then
-    echo "Usage: $0 <ph_files>... <fasta_files>..."
+    echo "Usage: $0 <ph_files>... <fasta_files>... <output_dir>"
     exit 1
 fi
 
-# 处理所有传递的文件
-for file in "$@"; do
-    if [[ -f $file && $file == cluster*.aln_nn.ph ]]; then
-        new_file="${file%.aln_nn.ph}.ph"
-        mv "$file" "$new_file"
-        cp "$new_file" .
-        echo "Renamed $file to $new_file"
-    elif [[ -f $file && $file == cluster*.fasta_aln_aa ]]; then
-        new_file="${file%.fasta_aln_aa}.fasta"
-        mv "$file" "$new_file"
-        cp "$new_file" .
-        echo "Renamed $file to $new_file"
+# 获取输出目录参数
+output_dir="output_file"
+
+# 确保输出目录存在
+mkdir -p "$output_dir"
+
+# 处理所有传递的文件，最后一个参数是输出目录，跳过它
+for file in "${@:1:$(($#-1))}"; do
+    if [[ -f $file ]]; then
+        # 复制文件到输出目录
+        cp "$file" "$output_dir/"
+        echo "Copied $file to $output_dir"
+        
+        # 重命名并复制需要重命名的文件
+        if [[ $file == cluster*.aln_nn.ph ]]; then
+            new_file="${file%.aln_nn.ph}.ph"
+            cp "$file" "$output_dir/$new_file"
+            echo "Copied and renamed $file to $output_dir/$new_file"
+        elif [[ $file == cluster*.fasta_aln_aa ]]; then
+            new_file="${file%.fasta_aln_aa}.fasta"
+            cp "$file" "$output_dir/$new_file"
+            echo "Copied and renamed $file to $output_dir/$new_file"
+        fi
     fi
 done

@@ -7,7 +7,7 @@ use Bio::Align::Utilities qw(:all);
 use Bio::LocatableSeq;
 
 my ($help, $intersect, $random, $size, $replicate, $output, @files, @alns);
-my $MAX_ALNS=200; 
+my $MAX_ALNS=400; 
 
 parse_options();
 preprocess();
