@@ -4,7 +4,7 @@
 function checkGroupOneMember {
     echo " [RUN] Checking clusters with only one member"
 
-    local seqs=$(awk '$6 <= 3 {print $7}' "$CLUSTER_FILE" | tr ',' ' ')
+    local seqs=$(awk '$6 <= 2 {print $7}' "$CLUSTER_FILE" | tr ',' ' ')
 
     for seq in $seqs; do
         echo "    [WARNING] Cluster with one sequence: $seq"
@@ -12,7 +12,7 @@ function checkGroupOneMember {
     done
 
     # Remove clusters with one member
-    awk '$6 > 3' "$CLUSTER_FILE" > tmp_cluster.txt && mv tmp_cluster.txt "$CLUSTER_FILE"
+    awk '$6 > 2' "$CLUSTER_FILE" > tmp_cluster.txt && mv tmp_cluster.txt "$CLUSTER_FILE"
 }
 
 # Set variables
@@ -30,8 +30,8 @@ CLUSTER2TABLE_CMD="summary_cluster.pl"
 SPLIT_CMD="splitFasta2singleSeq.pl"
 
 BLAST_THE="1e-3"
-MIN_EDGE_WEIGHT=10
-MIN_EDGE_DENSITY=0.7
+MIN_EDGE_WEIGHT=20
+MIN_EDGE_DENSITY=0.8
 
 # Cluster sequences by HCluster
 echo " [RUN] HCluster"

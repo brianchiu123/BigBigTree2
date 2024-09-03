@@ -4,3 +4,9 @@ output/
 test_folder/
 pptest.py
 test_raxml.nf
+PTH_Data/
+PTH_DATA_PTH10000/
+pplacer-Linux-v1.1.alpha19/
+BBXIQ_Tree/
+trace*
+PTH1000raxml*
